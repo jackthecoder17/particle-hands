@@ -1,0 +1,619 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Particle Hands</title>
+<style>
+  :root { --fg:#f4f4f8; --dim:rgba(244,244,248,.55); --glass:rgba(20,20,30,.55); --line:rgba(255,255,255,.14); --accent:#8b7bff; }
+  * { box-sizing:border-box; margin:0; padding:0; }
+  html,body { height:100%; background:#000; color:var(--fg); font-family:Inter,system-ui,-apple-system,"Segoe UI",sans-serif; overflow:hidden; }
+  canvas { display:block; position:fixed; inset:0; touch-action:none; }
+  video { display:none; }
+  button { font:inherit; color:inherit; cursor:pointer; border:1px solid var(--line); background:var(--glass); backdrop-filter:blur(12px); -webkit-backdrop-filter:blur(12px); border-radius:999px; padding:10px 16px; font-size:14px; transition:background .2s,border-color .2s,transform .1s; }
+  button:hover { background:rgba(60,60,80,.6); border-color:rgba(255,255,255,.3); }
+  button:active { transform:scale(.97); }
+
+  #start { position:fixed; inset:0; display:flex; align-items:center; justify-content:center; padding:16px; z-index:10; background:radial-gradient(ellipse at center, rgba(0,0,0,.25), rgba(0,0,0,.75)); transition:opacity .6s; }
+  #start.gone { opacity:0; pointer-events:none; }
+  .card { max-width:520px; width:100%; text-align:center; }
+  .card h1 { font-size:clamp(34px,7vw,56px); font-weight:800; letter-spacing:-.03em; line-height:1; }
+  .card h1 span { background:linear-gradient(90deg,#a99bff,#ff8ad8,#ffd27a); -webkit-background-clip:text; background-clip:text; color:transparent; }
+  .card p.sub { color:var(--dim); margin:14px 0 26px; font-size:16px; }
+  .cta { display:flex; gap:10px; justify-content:center; flex-wrap:wrap; }
+  .cta .primary { background:var(--fg); color:#000; border-color:var(--fg); font-weight:600; padding:13px 22px; }
+  .cta .primary:hover { background:#fff; }
+  .legend { margin-top:28px; display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:8px; text-align:left; }
+  .legend div { border:1px solid var(--line); background:var(--glass); border-radius:12px; padding:10px 12px; font-size:13px; color:var(--dim); }
+  .legend b { display:block; color:var(--fg); font-weight:600; margin-bottom:2px; }
+  #status { margin-top:16px; min-height:20px; font-size:13px; color:var(--dim); }
+
+  #label { position:fixed; left:50%; top:12%; transform:translateX(-50%); font-weight:800; letter-spacing:.35em; font-size:clamp(14px,2.2vw,20px); color:#fff; text-shadow:0 0 18px rgba(170,150,255,.9); opacity:0; pointer-events:none; white-space:nowrap; z-index:5; }
+  #label.show { animation:lbl 1.6s ease-out forwards; }
+  @keyframes lbl { 0%{opacity:0; transform:translate(-50%,8px);} 15%{opacity:1; transform:translate(-50%,0);} 70%{opacity:1;} 100%{opacity:0;} }
+
+  #ui { position:fixed; left:0; right:0; bottom:0; padding:16px; padding-bottom:max(16px,env(safe-area-inset-bottom)); display:flex; justify-content:space-between; align-items:flex-end; gap:10px; z-index:6; transition:opacity .3s; pointer-events:none; }
+  #ui > * { pointer-events:auto; }
+  #ui.hidden { opacity:0; }
+  #ui.hidden > * { pointer-events:none; }
+  .controls { display:flex; gap:8px; flex-wrap:wrap; justify-content:flex-end; }
+  #rec.on { background:#e5304a; border-color:#ff6075; }
+  #rec .dot { display:inline-block; width:9px; height:9px; border-radius:50%; background:#ff4d63; margin-right:7px; vertical-align:1px; }
+  #rec.on .dot { background:#fff; animation:blink 1s infinite; }
+  @keyframes blink { 50%{opacity:.2} }
+  #credit { font-size:13px; color:var(--dim); letter-spacing:.02em; }
+  #help { position:fixed; right:16px; bottom:72px; width:min(300px,calc(100vw - 32px)); background:var(--glass); backdrop-filter:blur(14px); -webkit-backdrop-filter:blur(14px); border:1px solid var(--line); border-radius:14px; padding:14px; font-size:13px; color:var(--dim); line-height:1.7; z-index:7; display:none; }
+  #help.open { display:block; }
+  #help b { color:var(--fg); }
+  #help kbd { font-family:ui-monospace,monospace; font-size:11px; border:1px solid var(--line); border-radius:4px; padding:0 5px; color:var(--fg); }
+  @media (max-width:560px){ .controls button{ padding:9px 12px; font-size:13px; } #credit{ display:none; } }
+</style>
+<script type="importmap">
+{ "imports": {
+  "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+} }
+</script>
+</head>
+<body>
+<video id="video" playsinline muted></video>
+
+<div id="start">
+  <div class="card">
+    <h1>Particle <span>Hands</span></h1>
+    <p class="sub">Control thousands of particles of light with your bare hands.</p>
+    <div class="cta">
+      <button class="primary" id="btnCam">✋ Start camera</button>
+      <button id="btnMouse">Use mouse instead</button>
+    </div>
+    <div class="legend">
+      <div><b>✊ Fist</b>Black hole: swallow everything</div>
+      <div><b>✊ → ✋ Release</b>Supernova</div>
+      <div><b>🤏 Pinch</b>Spin up a galaxy</div>
+      <div><b>☝️ Point</b>Paint with light</div>
+      <div><b>✋ Open palm</b>Force field: sweep them away</div>
+      <div><b>🤏 + 🤏 Both pinch</b>Energy beam between hands</div>
+    </div>
+    <div id="status"></div>
+  </div>
+</div>
+
+<div id="label"></div>
+
+<div id="ui" class="hidden">
+  <div id="credit"></div>
+  <div class="controls">
+    <button id="btnText" title="Change text (T)">Aa Text</button>
+    <button id="btnTheme" title="Change colors (C)">◐ Theme</button>
+    <button id="btnHelp" title="Help">?</button>
+    <button id="rec" title="Record video (R)"><span class="dot"></span><span id="recTxt">Record</span></button>
+  </div>
+</div>
+<div id="help">
+  <b>Gestures</b><br>
+  ✊ fist = black hole · release = supernova<br>
+  🤏 pinch = galaxy · ☝️ point = light brush<br>
+  ✋ open palm = force field · 🤏🤏 = energy beam<br>
+  Hands out of frame → particles reform your text<br><br>
+  <b>Keys</b><br>
+  <kbd>R</kbd> record · <kbd>T</kbd> text · <kbd>C</kbd> theme<br>
+  <kbd>V</kbd> camera brightness · <kbd>S</kbd> skeleton · <kbd>H</kbd> hide UI<br><br>
+  <b>URL options</b><br>
+  <kbd>?text=YOUR|NAME</kbd> (| = new line)<br>
+  <kbd>&amp;theme=naija</kbd> · <kbd>&amp;by=@handle</kbd>
+</div>
+
+<script type="module">
+import * as THREE from 'three';
+import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
+
+const MP_BASE = 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14';
+const MODEL = 'https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task';
+
+const params = new URLSearchParams(location.search);
+let TEXT = params.get('text') || 'WAVE|HELLO';
+const BY = params.get('by');
+const $ = (id) => document.getElementById(id);
+if (BY) $('credit').textContent = 'built by ' + BY;
+
+const isMobile = matchMedia('(pointer:coarse)').matches || innerWidth < 700;
+const N = isMobile ? 7000 : 16000;
+
+// ---------- renderer / scene ----------
+let W = innerWidth, H = innerHeight;
+const renderer = new THREE.WebGLRenderer({ antialias: false, powerPreference: 'high-performance' });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.setSize(W, H);
+document.body.appendChild(renderer.domElement);
+
+const scene = new THREE.Scene();
+const camera = new THREE.OrthographicCamera(-W / 2, W / 2, H / 2, -H / 2, -10, 10);
+
+const composer = new EffectComposer(renderer);
+composer.addPass(new RenderPass(scene, camera));
+const BLOOM = 0.8;
+const bloom = new UnrealBloomPass(new THREE.Vector2(W, H), BLOOM, 0.35, 0.22);
+composer.addPass(bloom);
+composer.addPass(new OutputPass());
+
+// webcam backdrop
+const video = $('video');
+const vidTex = new THREE.VideoTexture(video);
+vidTex.colorSpace = THREE.SRGBColorSpace;
+const vidLevels = [0.32, 0.6, 0];
+let vidLevel = 0;
+const vidMat = new THREE.MeshBasicMaterial({ map: vidTex, color: new THREE.Color(vidLevels[0], vidLevels[0], vidLevels[0]) });
+const vidMesh = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), vidMat);
+vidMesh.position.z = -5;
+vidMesh.visible = false;
+scene.add(vidMesh);
+let dw = W, dh = H; // displayed (cover-fit) video size
+
+// ---------- particles ----------
+const pos = new Float32Array(N * 3);
+const vel = new Float32Array(N * 2);
+const home = new Float32Array(N * 2);
+const col = new Float32Array(N * 3);
+const baseCol = new Float32Array(N * 3);
+const size = new Float32Array(N);
+const seed = new Float32Array(N);
+for (let i = 0; i < N; i++) {
+  pos[i * 3] = (Math.random() - 0.5) * W * 1.4;
+  pos[i * 3 + 1] = (Math.random() - 0.5) * H * 1.4;
+  size[i] = 1.8 + Math.pow(Math.random(), 3) * 4.0;
+  seed[i] = Math.random();
+}
+const geo = new THREE.BufferGeometry();
+geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+geo.setAttribute('aColor', new THREE.BufferAttribute(col, 3));
+geo.setAttribute('aSize', new THREE.BufferAttribute(size, 1));
+const pMat = new THREE.ShaderMaterial({
+  uniforms: { uPR: { value: renderer.getPixelRatio() } },
+  vertexShader: `
+    attribute float aSize; attribute vec3 aColor; varying vec3 vColor; uniform float uPR;
+    void main(){ vColor = aColor; gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); gl_PointSize = aSize * uPR; }`,
+  fragmentShader: `
+    varying vec3 vColor;
+    void main(){ float d = length(gl_PointCoord - 0.5); float a = smoothstep(0.5, 0.0, d); a *= a; gl_FragColor = vec4(vColor * a, a); }`,
+  transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
+});
+const points = new THREE.Points(geo, pMat);
+points.frustumCulled = false;
+scene.add(points);
+
+// ---------- themes ----------
+const themes = [
+  { name: 'cosmic', a: [0.30, 0.38, 1.0], b: [0.75, 0.30, 1.0], hot: [1.0, 0.55, 0.90] },
+  { name: 'ember',  a: [1.0, 0.28, 0.05], b: [1.0, 0.55, 0.10], hot: [1.0, 0.85, 0.45] },
+  { name: 'aurora', a: [0.05, 0.90, 0.55], b: [0.15, 0.50, 1.0], hot: [0.55, 1.0, 0.95] },
+  { name: 'gold',   a: [1.0, 0.72, 0.25], b: [1.0, 0.50, 0.12], hot: [1.0, 1.0, 0.92] },
+  { name: 'naija',  flag: true, hot: [1.0, 1.0, 1.0] },
+];
+let themeIdx = Math.max(0, themes.findIndex(t => t.name === params.get('theme')));
+function applyTheme() {
+  const th = themes[themeIdx];
+  for (let i = 0; i < N; i++) {
+    let c;
+    if (th.flag) {
+      const third = Math.abs(home[i * 2]) < textHalfW / 3;
+      c = third ? [0.92, 0.95, 0.92] : [0.0, 0.78, 0.36];
+    } else {
+      const t = seed[i];
+      c = [th.a[0] + (th.b[0] - th.a[0]) * t, th.a[1] + (th.b[1] - th.a[1]) * t, th.a[2] + (th.b[2] - th.a[2]) * t];
+    }
+    const k = 1.0 + Math.random() * 0.5;
+    baseCol[i * 3] = c[0] * k; baseCol[i * 3 + 1] = c[1] * k; baseCol[i * 3 + 2] = c[2] * k;
+  }
+}
+
+// ---------- text homes ----------
+let textHalfW = W / 2;
+function buildHomes() {
+  if (W < 2 || H < 2) return;
+  const cv = document.createElement('canvas');
+  cv.width = W; cv.height = H;
+  const g = cv.getContext('2d', { willReadFrequently: true });
+  const lines = TEXT.split(/\||\\n/).map(s => s.trim()).filter(Boolean);
+  const font = (s) => `900 ${s}px Inter, system-ui, -apple-system, "Segoe UI", sans-serif`;
+  g.font = font(100);
+  const maxW = Math.max(1, ...lines.map(l => g.measureText(l).width));
+  const fs = Math.min(H * 0.62 / Math.max(1, lines.length) / 1.05, (W * 0.86 / maxW) * 100, 240);
+  g.font = font(fs);
+  g.fillStyle = '#fff'; g.textAlign = 'center'; g.textBaseline = 'middle';
+  const lh = fs * 1.02, y0 = H / 2 - ((lines.length - 1) * lh) / 2 - H * 0.03;
+  lines.forEach((l, i) => g.fillText(l, W / 2, y0 + i * lh));
+  textHalfW = (maxW * fs / 100) / 2;
+  const data = g.getImageData(0, 0, W, H).data;
+  const step = Math.max(2, Math.round(fs / 70));
+  const pts = [];
+  for (let y = 0; y < H; y += step) for (let x = 0; x < W; x += step) if (data[(y * W + x) * 4 + 3] > 128) pts.push(x, y);
+  const n = pts.length / 2;
+  for (let i = 0; i < N; i++) {
+    if (n === 0) { home[i * 2] = (Math.random() - 0.5) * W; home[i * 2 + 1] = (Math.random() - 0.5) * H; continue; }
+    const j = i < n ? i : (Math.random() * n) | 0;
+    // spread evenly when fewer particles than samples
+    const k = n > N ? Math.floor(i * n / N) : j;
+    home[i * 2] = pts[k * 2] - W / 2 + (Math.random() - 0.5) * step;
+    home[i * 2 + 1] = H / 2 - pts[k * 2 + 1] + (Math.random() - 0.5) * step;
+  }
+  applyTheme();
+}
+
+// ---------- hands ----------
+const CONN = [[0,1],[1,2],[2,3],[3,4],[0,5],[5,6],[6,7],[7,8],[5,9],[9,10],[10,11],[11,12],[9,13],[13,14],[14,15],[15,16],[13,17],[17,18],[18,19],[19,20],[0,17]];
+const skelPos = new Float32Array(2 * CONN.length * 2 * 3);
+const skelGeo = new THREE.BufferGeometry();
+skelGeo.setAttribute('position', new THREE.BufferAttribute(skelPos, 3));
+const skel = new THREE.LineSegments(skelGeo, new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.22 }));
+skel.frustumCulled = false;
+scene.add(skel);
+
+const mkHand = () => ({ present: false, lost: 0, lm: Array.from({ length: 21 }, () => ({ x: 0, y: 0 })), g: 'none', cand: 'none', candN: 0, pinching: false, charge: 0, palm: { x: 0, y: 0 }, pvx: 0, pvy: 0, tip: { x: 0, y: 0 }, pinch: { x: 0, y: 0 } });
+const hands = [mkHand(), mkHand()];
+
+function updateHand(h, lms) {
+  const first = !h.present;
+  h.present = true; h.lost = 0;
+  for (let k = 0; k < 21; k++) {
+    const wx = (0.5 - lms[k].x) * dw, wy = (0.5 - lms[k].y) * dh;
+    if (first) { h.lm[k].x = wx; h.lm[k].y = wy; }
+    else { h.lm[k].x += (wx - h.lm[k].x) * 0.65; h.lm[k].y += (wy - h.lm[k].y) * 0.65; }
+  }
+  const L = h.lm;
+  const px = (L[0].x + L[5].x + L[9].x + L[13].x + L[17].x) / 5, py = (L[0].y + L[5].y + L[9].y + L[13].y + L[17].y) / 5;
+  h.pvx = first ? 0 : px - h.palm.x; h.pvy = first ? 0 : py - h.palm.y;
+  h.palm.x = px; h.palm.y = py;
+  h.tip.x = L[8].x; h.tip.y = L[8].y;
+  h.pinch.x = (L[4].x + L[8].x) / 2; h.pinch.y = (L[4].y + L[8].y) / 2;
+
+  // gesture classification in aspect-correct image space
+  const vw = video.videoWidth || 1, vh = video.videoHeight || 1;
+  const P = lms.map(l => ({ x: l.x * vw, y: l.y * vh, z: l.z * vw }));
+  const D = (a, b) => Math.hypot(P[a].x - P[b].x, P[a].y - P[b].y, P[a].z - P[b].z);
+  const sc = D(0, 9) || 1;
+  const ext = [[8, 6], [12, 10], [16, 14], [20, 18]].map(([t, p]) => D(t, 0) > D(p, 0) * 1.1);
+  const pd = D(4, 8) / sc;
+  if (h.pinching) { if (pd > 0.42) h.pinching = false; } else if (pd < 0.26) h.pinching = true;
+  const n = ext.filter(Boolean).length;
+  let g;
+  if (h.pinching && D(8, 9) / sc > 0.55) g = 'pinch';
+  else if (n === 0) g = 'fist';
+  else if (n >= 4) g = 'open';
+  else g = 'point';
+  if (g === h.cand) h.candN++; else { h.cand = g; h.candN = 1; }
+  if (h.candN >= 3 && g !== h.g) setGesture(h, g);
+}
+function markLost(h) {
+  if (!h.present) return;
+  if (++h.lost > 6) { setGesture(h, 'none'); h.present = false; }
+}
+function setGesture(h, g) {
+  const prev = h.g;
+  if (prev === 'fist' && g !== 'fist' && h.charge > 0.15) { explode(h.palm.x, h.palm.y, h.charge); h.charge = 0; }
+  if (g !== 'fist') h.charge = 0;
+  h.g = g;
+  const names = { fist: 'BLACK HOLE', pinch: 'GALAXY', point: 'LIGHT BRUSH', open: 'FORCE FIELD' };
+  if (names[g]) showLabel(names[g]);
+}
+
+function processResults(list) {
+  const det = list.slice(0, 2).map(lms => ({ lms, x: (0.5 - lms[9].x) * dw, y: (0.5 - lms[9].y) * dh }));
+  const dist = (h, d) => h.present ? Math.hypot(h.palm.x - d.x, h.palm.y - d.y) : 0;
+  let assign = [-1, -1];
+  if (det.length === 1) {
+    let s = 0;
+    if (hands[0].present && hands[1].present) s = dist(hands[0], det[0]) <= dist(hands[1], det[0]) ? 0 : 1;
+    else if (hands[1].present) s = 1;
+    assign[s] = 0;
+  } else if (det.length === 2) {
+    const c0 = dist(hands[0], det[0]) + dist(hands[1], det[1]);
+    const c1 = dist(hands[0], det[1]) + dist(hands[1], det[0]);
+    assign = c1 < c0 ? [1, 0] : [0, 1];
+  }
+  for (let s = 0; s < 2; s++) assign[s] >= 0 ? updateHand(hands[s], det[assign[s]].lms) : markLost(hands[s]);
+}
+
+// ---------- effects ----------
+let shake = 0, flash = 0;
+function explode(cx, cy, charge) {
+  const power = 18 + charge * 42;
+  for (let i = 0; i < N; i++) {
+    const dx = pos[i * 3] - cx, dy = pos[i * 3 + 1] - cy;
+    const d = Math.sqrt(dx * dx + dy * dy) + 0.01;
+    const fall = 1 / (1 + d / 450);
+    const p = power * fall * (0.1 + Math.pow(Math.random(), 1.6) * 1.6);
+    const a = Math.atan2(dy, dx) + (Math.random() - 0.5) * 0.4;
+    vel[i * 2] += Math.cos(a) * p; vel[i * 2 + 1] += Math.sin(a) * p;
+  }
+  shake = 6 + charge * 16; flash = 0.5 + charge * 0.9;
+  showLabel('SUPERNOVA');
+}
+let labelTimer = 0, lastLabel = '';
+function showLabel(txt) {
+  const now = performance.now();
+  if (txt === lastLabel && now - labelTimer < 2500) return;
+  lastLabel = txt; labelTimer = now;
+  const el = $('label'); el.textContent = txt;
+  el.classList.remove('show'); void el.offsetWidth; el.classList.add('show');
+}
+
+// ---------- simulation ----------
+let idleT = 0, homing = 1, wasBeam = false;
+function step(dt, t) {
+  const k = Math.min(dt * 60, 2.5);
+  const damp = Math.pow(0.93, k);
+  const active = hands.filter(h => h.present && h.g !== 'none');
+  const beam = active.length === 2 && active[0].g === 'pinch' && active[1].g === 'pinch';
+  if (beam && !wasBeam) showLabel('ENERGY BEAM');
+  wasBeam = beam;
+  for (const h of active) if (h.g === 'fist') h.charge = Math.min(1, h.charge + dt / 1.6);
+
+  const anyHand = hands.some(h => h.present);
+  idleT = anyHand ? 0 : idleT + dt;
+  homing += ((idleT > 0.9 ? 1 : 0) - homing) * Math.min(1, dt * 1.5);
+  const homeK = homing * 0.022, homeDamp = 1 - 0.07 * homing;
+  const flowK = 0.035 * (1 - homing * 0.85);
+  const hw = W / 2 + 30, hh = H / 2 + 30;
+  const th = themes[themeIdx].hot;
+  let A, B, abx, aby, L2, L;
+  if (beam) { A = active[0].pinch; B = active[1].pinch; abx = B.x - A.x; aby = B.y - A.y; L2 = abx * abx + aby * aby + 1; L = Math.sqrt(L2); }
+
+  for (let i = 0; i < N; i++) {
+    const i2 = i * 2, i3 = i * 3;
+    let x = pos[i3], y = pos[i3 + 1], vx = vel[i2], vy = vel[i2 + 1];
+    const sd = seed[i];
+    const ang = Math.sin(x * 0.0035 + t * 0.35) * 2.2 + Math.cos(y * 0.004 - t * 0.25) * 2.2 + sd * 0.6;
+    let ax = Math.cos(ang) * flowK, ay = Math.sin(ang) * flowK, dim = 1;
+
+    if (homeK > 0.0005) {
+      ax += (home[i2] - x) * homeK; ay += (home[i2 + 1] - y) * homeK;
+      vx *= homeDamp; vy *= homeDamp;
+    }
+
+    if (beam) {
+      // twisting double helix flowing between the two pinch points
+      const h1 = (i * 0.6180339) % 1, h2 = (i * 0.3710553) % 1;
+      const u = (h1 + t * 0.22) % 1;
+      const amp = (28 + L * 0.06) * Math.sin(Math.PI * u) * (0.75 + h2 * 0.5);
+      const off = Math.sin(u * Math.PI * 2 * (1 + L / 260) - t * 5 + (i % 2) * Math.PI) * amp + (sd - 0.5) * 10;
+      const dx = A.x + abx * u - aby / L * off - x, dy = A.y + aby * u + abx / L * off - y;
+      const d = Math.sqrt(dx * dx + dy * dy) + 1;
+      const f = Math.min(d * 0.045, 3.4);
+      ax += dx / d * f; ay += dy / d * f;
+      if (d < 60) { const c = Math.pow(0.86, k); vx *= c; vy *= c; }
+      dim *= Math.max(0.04, Math.exp(-d / 90));
+    } else {
+      for (let h = 0; h < active.length; h++) {
+        const hd = active[h];
+        let dx, dy, d, f, s;
+        switch (hd.g) {
+          case 'point':
+            dx = hd.tip.x - x; dy = hd.tip.y - y; d = Math.sqrt(dx * dx + dy * dy) + 1;
+            f = 1.1 * Math.exp(-d / 320) + 0.04; s = 0.9 * Math.exp(-d / 180);
+            if (d < 28) f -= 1.6;
+            ax += dx / d * f - dy / d * s; ay += dy / d * f + dx / d * s;
+            break;
+          case 'pinch':
+            {
+              // 3-armed log spiral rotating around the pinch point
+              const h1 = (i * 0.6180339) % 1, h2 = (i * 0.3710553) % 1;
+              const r = 14 + Math.pow(sd, 1.5) * 300 + (h2 - 0.5) * 30 * sd;
+              const th = (i % 3) * 2.0944 + Math.log(r / 14) * 2.3 - t * 0.9 + (h1 - 0.5) * (1.1 - sd * 0.6);
+              dx = hd.pinch.x + Math.cos(th) * r - x; dy = hd.pinch.y + Math.sin(th) * r * 0.8 - y;
+              d = Math.sqrt(dx * dx + dy * dy) + 1;
+              f = Math.min(d * 0.04, 3.2) / active.length;
+              ax += dx / d * f; ay += dy / d * f;
+              if (d < 80) { const c = Math.pow(0.88, k); vx *= c; vy *= c; }
+            }
+            break;
+          case 'fist':
+            dx = hd.palm.x - x; dy = hd.palm.y - y; d = Math.sqrt(dx * dx + dy * dy) + 1;
+            {
+              // accretion disk: pulled toward a ring, whipped around it, dark core
+              const r = (40 + sd * sd * 150) * (1 - 0.35 * hd.charge);
+              f = d > r ? 1.3 + hd.charge * 1.2 : -(r - d) * 0.08;
+              f = Math.min(f, (d - r) * 0.06 + 0.2) ;
+              s = (1.2 + hd.charge * 1.4) * Math.exp(-d / 260);
+              ax += dx / d * f - dy / d * s; ay += dy / d * f + dx / d * s;
+              if (d < r * 1.6) { const c = Math.pow(0.9, k); vx *= c; vy *= c; dim *= 0.25 + 0.75 * Math.min(1, d / 260); }
+            }
+            break;
+          case 'open':
+            dx = x - hd.palm.x; dy = y - hd.palm.y; d = Math.sqrt(dx * dx + dy * dy) + 1;
+            f = 2.8 * Math.exp(-d / 210);
+            const wind = 0.12 * Math.exp(-d / 240);
+            ax += dx / d * f + hd.pvx * wind; ay += dy / d * f + hd.pvy * wind;
+            break;
+        }
+      }
+    }
+
+    vx = (vx + ax * k) * damp; vy = (vy + ay * k) * damp;
+    const sp2 = vx * vx + vy * vy;
+    if (sp2 > 4900) { const r = 70 / Math.sqrt(sp2); vx *= r; vy *= r; }
+    x += vx * k; y += vy * k;
+    if (x < -hw) { x = -hw; vx = Math.abs(vx) * 0.5; } else if (x > hw) { x = hw; vx = -Math.abs(vx) * 0.5; }
+    if (y < -hh) { y = -hh; vy = Math.abs(vy) * 0.5; } else if (y > hh) { y = hh; vy = -Math.abs(vy) * 0.5; }
+    pos[i3] = x; pos[i3 + 1] = y; vel[i2] = vx; vel[i2 + 1] = vy;
+
+    const tt = Math.min(1, Math.sqrt(vx * vx + vy * vy) / 14);
+    const br = (0.85 + tt * 0.45) * dim;
+    col[i3] = (baseCol[i3] + (th[0] - baseCol[i3]) * tt) * br;
+    col[i3 + 1] = (baseCol[i3 + 1] + (th[1] - baseCol[i3 + 1]) * tt) * br;
+    col[i3 + 2] = (baseCol[i3 + 2] + (th[2] - baseCol[i3 + 2]) * tt) * br;
+  }
+  geo.attributes.position.needsUpdate = true;
+  geo.attributes.aColor.needsUpdate = true;
+}
+
+function updateSkeleton() {
+  let o = 0;
+  for (const h of hands) {
+    for (const [a, b] of CONN) {
+      const ok = h.present && mode === 'camera';
+      skelPos[o++] = ok ? h.lm[a].x : 1e5; skelPos[o++] = ok ? h.lm[a].y : 1e5; skelPos[o++] = 1;
+      skelPos[o++] = ok ? h.lm[b].x : 1e5; skelPos[o++] = ok ? h.lm[b].y : 1e5; skelPos[o++] = 1;
+    }
+  }
+  skelGeo.attributes.position.needsUpdate = true;
+}
+
+// ---------- layout ----------
+function layoutVideo() {
+  const vw = video.videoWidth, vh = video.videoHeight;
+  if (!vw) { dw = W; dh = H; return; }
+  const s = Math.max(W / vw, H / vh);
+  dw = vw * s; dh = vh * s;
+  vidMesh.scale.set(-dw, dh, 1); // mirrored
+}
+function onResize() {
+  W = innerWidth; H = innerHeight;
+  renderer.setSize(W, H); composer.setSize(W, H); bloom.resolution.set(W, H);
+  camera.left = -W / 2; camera.right = W / 2; camera.top = H / 2; camera.bottom = -H / 2; camera.updateProjectionMatrix();
+  layoutVideo(); buildHomes();
+}
+addEventListener('resize', onResize);
+
+// ---------- input modes ----------
+let mode = 'none', landmarker = null, lastVT = -1;
+const status = (s) => $('status').textContent = s;
+
+async function startCamera() {
+  status('Requesting camera & loading hand tracking…');
+  $('btnCam').disabled = true;
+  try {
+    const camP = navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user', width: { ideal: 1280 }, height: { ideal: 720 } }, audio: false });
+    const lmP = (async () => {
+      const vision = await import(MP_BASE + '/vision_bundle.mjs');
+      const fileset = await vision.FilesetResolver.forVisionTasks(MP_BASE + '/wasm');
+      return vision.HandLandmarker.createFromOptions(fileset, {
+        baseOptions: { modelAssetPath: MODEL, delegate: 'GPU' },
+        runningMode: 'VIDEO', numHands: 2,
+        minHandDetectionConfidence: 0.5, minHandPresenceConfidence: 0.5, minTrackingConfidence: 0.5,
+      });
+    })();
+    const [stream, lm] = await Promise.all([camP, lmP]);
+    landmarker = lm;
+    video.srcObject = stream;
+    await video.play();
+    layoutVideo();
+    vidMesh.visible = vidLevels[vidLevel] > 0;
+    mode = 'camera';
+    enterApp();
+    showLabel('SHOW YOUR HANDS');
+  } catch (e) {
+    console.error(e);
+    status('Camera unavailable (' + (e.message || e.name) + '). Try “Use mouse instead”.');
+    $('btnCam').disabled = false;
+  }
+}
+function startMouse() { mode = 'mouse'; enterApp(); showLabel('CLICK & HOLD'); }
+function enterApp() { $('start').classList.add('gone'); $('ui').classList.remove('hidden'); }
+
+$('btnCam').onclick = startCamera;
+$('btnMouse').onclick = startMouse;
+
+// mouse / touch: move = brush, hold = black hole, release = supernova, shift+hold = galaxy
+const mh = hands[0];
+const toWorld = (e) => ({ x: e.clientX - W / 2, y: H / 2 - e.clientY });
+function mouseMove(e) {
+  if (mode !== 'mouse') return;
+  const p = toWorld(e);
+  if (!mh.present) { mh.present = true; mh.palm.x = p.x; mh.palm.y = p.y; if (mh.g === 'none') setGesture(mh, 'point'); }
+  mh.pvx = p.x - mh.palm.x; mh.pvy = p.y - mh.palm.y;
+  mh.palm.x = mh.tip.x = mh.pinch.x = p.x; mh.palm.y = mh.tip.y = mh.pinch.y = p.y;
+}
+renderer.domElement.addEventListener('pointermove', mouseMove);
+renderer.domElement.addEventListener('pointerdown', (e) => { if (mode !== 'mouse') return; mouseMove(e); setGesture(mh, e.shiftKey ? 'pinch' : 'fist'); });
+addEventListener('pointerup', () => { if (mode === 'mouse' && mh.present) setGesture(mh, 'point'); });
+renderer.domElement.addEventListener('pointerleave', (e) => { if (mode === 'mouse' && e.pointerType === 'mouse') { setGesture(mh, 'none'); mh.present = false; } });
+
+// ---------- controls ----------
+function changeText() {
+  const t = prompt('Text for the particles (use | for a new line):', TEXT);
+  if (t == null || !t.trim()) return;
+  TEXT = t.trim().slice(0, 40);
+  const u = new URL(location.href); u.searchParams.set('text', TEXT); history.replaceState(null, '', u);
+  buildHomes();
+}
+function nextTheme() {
+  themeIdx = (themeIdx + 1) % themes.length; applyTheme(); showLabel(themes[themeIdx].name.toUpperCase());
+  const u = new URL(location.href); u.searchParams.set('theme', themes[themeIdx].name); history.replaceState(null, '', u);
+}
+$('btnText').onclick = changeText;
+$('btnTheme').onclick = nextTheme;
+$('btnHelp').onclick = () => $('help').classList.toggle('open');
+
+let recorder = null, recStart = 0, recTimer = null;
+function pickMime() {
+  for (const m of ['video/mp4;codecs=avc1.42E01E', 'video/mp4', 'video/webm;codecs=vp9', 'video/webm'])
+    if (window.MediaRecorder && MediaRecorder.isTypeSupported(m)) return m;
+  return '';
+}
+function toggleRec() {
+  if (recorder) { recorder.stop(); return; }
+  const mime = pickMime();
+  if (!window.MediaRecorder) { showLabel('RECORDING NOT SUPPORTED'); return; }
+  const chunks = [];
+  recorder = new MediaRecorder(renderer.domElement.captureStream(60), mime ? { mimeType: mime, videoBitsPerSecond: 14e6 } : undefined);
+  recorder.ondataavailable = (e) => e.data.size && chunks.push(e.data);
+  recorder.onstop = () => {
+    const type = recorder.mimeType || mime || 'video/webm';
+    const blob = new Blob(chunks, { type });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = `particle-hands-${Date.now()}.${type.includes('mp4') ? 'mp4' : 'webm'}`;
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+    recorder = null; clearInterval(recTimer);
+    $('rec').classList.remove('on'); $('recTxt').textContent = 'Record';
+  };
+  recorder.start(250);
+  recStart = performance.now();
+  $('rec').classList.add('on');
+  recTimer = setInterval(() => {
+    const s = Math.floor((performance.now() - recStart) / 1000);
+    $('recTxt').textContent = `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
+  }, 250);
+  $('recTxt').textContent = '0:00';
+}
+$('rec').onclick = toggleRec;
+
+addEventListener('keydown', (e) => {
+  if (e.target.tagName === 'INPUT' || e.metaKey || e.ctrlKey) return;
+  const k = e.key.toLowerCase();
+  if (k === 'r') toggleRec();
+  else if (k === 't') changeText();
+  else if (k === 'c') nextTheme();
+  else if (k === 'h') $('ui').classList.toggle('hidden');
+  else if (k === 's') skel.visible = !skel.visible;
+  else if (k === 'v' && mode === 'camera') {
+    vidLevel = (vidLevel + 1) % vidLevels.length;
+    const l = vidLevels[vidLevel]; vidMat.color.setRGB(l, l, l); vidMesh.visible = l > 0;
+  }
+});
+
+// ---------- loop ----------
+buildHomes();
+let last = performance.now();
+function frame(now) {
+  const dt = Math.min(0.05, (now - last) / 1000); last = now;
+  if (mode === 'camera' && landmarker && video.readyState >= 2 && video.currentTime !== lastVT) {
+    lastVT = video.currentTime;
+    try { processResults(landmarker.detectForVideo(video, now).landmarks || []); } catch (e) { console.warn(e); }
+  }
+  step(dt, now / 1000);
+  updateSkeleton();
+  bloom.strength = BLOOM + flash; flash *= Math.pow(0.9, dt * 60);
+  camera.position.x = (Math.random() - 0.5) * shake; camera.position.y = (Math.random() - 0.5) * shake;
+  shake *= Math.pow(0.88, dt * 60);
+  composer.render();
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>
